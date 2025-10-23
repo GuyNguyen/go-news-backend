@@ -4,13 +4,12 @@ use futures::stream::TryStreamExt;
 use log::{error, info};
 use mongodb::{
     bson::doc,
-    options::ClientOptions,
+    options::{ClientOptions},
     Client,
 };
 use rss::Channel;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use std::io::Write;
 use std::time::Duration;
 
 // --- Configuration ---
@@ -40,7 +39,7 @@ async fn health_check() -> impl Responder {
 /// Triggers a manual fetch of the RSS feed.
 #[post("/force-check")]
 async fn force_check(db_client: web::Data<Client>) -> impl Responder {
-    info!("Manual check triggered via API.");
+    info!("POST /force-check endpoint called.");
     match fetch_and_store_feed(&db_client).await {
         Ok(_) => HttpResponse::Ok().body("Feed check completed successfully."),
         Err(e) => {
@@ -128,22 +127,44 @@ async fn run_periodic_checker(client: web::Data<Client>) {
     }
 }
 
+/// Sets up the logger to output to both console and file.
+fn setup_logger() -> Result<(), fern::InitError> {
+    // Create a shared formatter
+    let formatter = move |out: fern::FormatCallback, message: &std::fmt::Arguments, record: &log::Record| {
+        out.finish(format_args!(
+            "{} [{}] - {}",
+            Local::now().format("%Y-%m-%dT%H:%M:%S"),
+            record.level(),
+            message
+        ))
+    };
+
+    // Log to console (stdout)
+    let console_log = fern::Dispatch::new()
+        .format(formatter.clone())
+        .level(log::LevelFilter::Info) // Set the log level for console
+        .chain(std::io::stdout());
+
+    // Log to file (backend.log)
+    let file_log = fern::Dispatch::new()
+        .format(formatter)
+        .level(log::LevelFilter::Info) // Set the log level for file
+        .chain(fern::log_file("backend.log")?);
+
+    // Apply both console and file loggers
+    fern::Dispatch::new()
+        .chain(console_log)
+        .chain(file_log)
+        .apply()?;
+
+    Ok(())
+}
+
 // --- Main Application Setup ---
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // 1. Initialize Logger
-    env_logger::Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{} [{}] - {}",
-                Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .filter(None, log::LevelFilter::Info)
-        .init();
+    setup_logger().expect("Failed to initialize logger.");
 
     // 2. Connect to MongoDB and create shared data
     info!("Connecting to MongoDB...");

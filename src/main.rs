@@ -23,6 +23,13 @@ struct RssItem {
     link: String,
     description: String,
     pub_date: String,
+    #[serde(default)] // Add this attribute
+    posted: bool, // New field to track post status
+}
+
+#[derive(Deserialize)]
+struct MarkPostedRequest {
+    links: Vec<String>,
 }
 
 #[get("/health")]
@@ -70,6 +77,64 @@ async fn get_items(db_client: web::Data<Client>) -> impl Responder {
     }
 }
 
+#[get("/items/unposted")]
+async fn get_unposted_items(db_client: web::Data<Client>) -> impl Responder {
+    info!("GET /items/unposted endpoint called.");
+    let collection = db_client
+        .database(DB_NAME)
+        .collection::<RssItem>(COLLECTION_NAME);
+
+    let filter = doc! { "posted": false };
+
+    match collection.find(filter).await {
+        Ok(cursor) => {
+            let items: Vec<RssItem> = match cursor.try_collect().await {
+                Ok(items) => items,
+                Err(e) => {
+                    error!("Error collecting items from cursor: {}", e);
+                    return HttpResponse::InternalServerError().finish();
+                }
+            };
+            HttpResponse::Ok().json(items)
+        }
+        Err(e) => {
+            error!("Failed to fetch unposted items from database: {}", e);
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[post("/items/mark-posted")]
+async fn mark_items_posted(
+    db_client: web::Data<Client>,
+    req: web::Json<MarkPostedRequest>,
+) -> impl Responder {
+    info!(
+        "POST /items/mark-posted endpoint called for {} links.",
+        req.links.len()
+    );
+    let collection = db_client
+        .database(DB_NAME)
+        .collection::<RssItem>(COLLECTION_NAME);
+
+    let filter = doc! { "link": { "$in": &req.links } };
+    let update = doc! { "$set": { "posted": true } };
+
+    match collection.update_many(filter, update).await {
+        Ok(result) => {
+            info!("Successfully marked {} items as posted.", result.modified_count);
+            HttpResponse::Ok().json(doc! {
+                "message": "Update successful",
+                "items_updated": result.modified_count as i64
+            })
+        }
+        Err(e) => {
+            error!("Failed to mark items as posted: {}", e);
+            HttpResponse::InternalServerError().body("Failed to update items")
+        }
+    }
+}
+
 async fn fetch_and_store_feed(client: &Client) -> Result<(), Box<dyn Error>> {
     info!("Starting RSS feed fetch...");
     let content = reqwest::get("https://gome.at/feed").await?.bytes().await?;
@@ -87,6 +152,7 @@ async fn fetch_and_store_feed(client: &Client) -> Result<(), Box<dyn Error>> {
             link: item.link().unwrap_or_default().to_string(),
             description: item.description().unwrap_or_default().to_string(),
             pub_date: item.pub_date().unwrap_or_default().to_string(),
+            posted: false, // Default to false for new items
         };
 
         let filter = doc! { "link": &rss_item.link };
@@ -94,7 +160,7 @@ async fn fetch_and_store_feed(client: &Client) -> Result<(), Box<dyn Error>> {
 
         if existing_item.is_none() {
             collection.insert_one(&rss_item).await?;
-            info!("Stored: {}", rss_item.title);
+            info!("Stored new item: {}", rss_item.title);
         }
     }
     info!("Feed processing complete.");
@@ -162,10 +228,12 @@ async fn main() -> std::io::Result<()> {
     info!("Starting Actix web server at http://127.0.0.1:8080");
     HttpServer::new(move || {
         App::new()
-            .app_data(db_client.clone()) // Share the DB client with handlers
+            .app_data(db_client.clone())
             .service(health_check)
             .service(force_check)
             .service(get_items)
+            .service(get_unposted_items)
+            .service(mark_items_posted)
     })
     .bind(("127.0.0.1", 8080))?
     .run()

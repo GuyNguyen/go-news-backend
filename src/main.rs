@@ -12,13 +12,11 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::time::Duration;
 
-// --- Configuration ---
 const CHECK_INTERVAL_SECONDS: u64 = 60 * 30; // 30 minutes
 const MONGO_URI: &str = "mongodb://localhost:27017";
 const DB_NAME: &str = "rss_feed_db";
 const COLLECTION_NAME: &str = "feed_items";
 
-// --- Data Structure ---
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct RssItem {
     title: String,
@@ -27,16 +25,12 @@ struct RssItem {
     pub_date: String,
 }
 
-// --- API Handlers ---
-
-/// Health check endpoint.
 #[get("/health")]
 async fn health_check() -> impl Responder {
     info!("GET /health endpoint called.");
     HttpResponse::Ok().body("Service is running")
 }
 
-/// Triggers a manual fetch of the RSS feed.
 #[post("/force-check")]
 async fn force_check(db_client: web::Data<Client>) -> impl Responder {
     info!("POST /force-check endpoint called.");
@@ -49,7 +43,6 @@ async fn force_check(db_client: web::Data<Client>) -> impl Responder {
     }
 }
 
-/// Fetches all stored items from the database.
 #[get("/items")]
 async fn get_items(db_client: web::Data<Client>) -> impl Responder {
     info!("GET /items endpoint called.");
@@ -57,11 +50,8 @@ async fn get_items(db_client: web::Data<Client>) -> impl Responder {
         .database(DB_NAME)
         .collection::<RssItem>(COLLECTION_NAME);
 
-    // The filter for "all documents" is an empty document.
     let filter = doc! {};
 
-    // Per the compiler error, `find` must be called with a single `Document` argument.
-    // We have removed sorting for now to resolve the immediate compilation error.
     match collection.find(filter).await {
         Ok(cursor) => {
             let items: Vec<RssItem> = match cursor.try_collect().await {
@@ -80,10 +70,6 @@ async fn get_items(db_client: web::Data<Client>) -> impl Responder {
     }
 }
 
-// --- Core Logic ---
-
-/// Fetches the feed, parses it, and stores new items in MongoDB.
-/// This function is now reusable and accepts a client reference.
 async fn fetch_and_store_feed(client: &Client) -> Result<(), Box<dyn Error>> {
     info!("Starting RSS feed fetch...");
     let content = reqwest::get("https://gome.at/feed").await?.bytes().await?;
@@ -115,7 +101,6 @@ async fn fetch_and_store_feed(client: &Client) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// The background task that runs periodically.
 async fn run_periodic_checker(client: web::Data<Client>) {
     let mut interval = tokio::time::interval(Duration::from_secs(CHECK_INTERVAL_SECONDS));
     loop {
@@ -127,7 +112,6 @@ async fn run_periodic_checker(client: web::Data<Client>) {
     }
 }
 
-/// Sets up the logger to output to both console and file.
 fn setup_logger() -> Result<(), fern::InitError> {
     // Create a shared formatter
     let formatter = move |out: fern::FormatCallback, message: &std::fmt::Arguments, record: &log::Record| {
@@ -139,19 +123,16 @@ fn setup_logger() -> Result<(), fern::InitError> {
         ))
     };
 
-    // Log to console (stdout)
     let console_log = fern::Dispatch::new()
         .format(formatter.clone())
         .level(log::LevelFilter::Info) // Set the log level for console
         .chain(std::io::stdout());
 
-    // Log to file (backend.log)
     let file_log = fern::Dispatch::new()
         .format(formatter)
         .level(log::LevelFilter::Info) // Set the log level for file
         .chain(fern::log_file("backend.log")?);
 
-    // Apply both console and file loggers
     fern::Dispatch::new()
         .chain(console_log)
         .chain(file_log)
@@ -160,13 +141,10 @@ fn setup_logger() -> Result<(), fern::InitError> {
     Ok(())
 }
 
-// --- Main Application Setup ---
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // 1. Initialize Logger
     setup_logger().expect("Failed to initialize logger.");
 
-    // 2. Connect to MongoDB and create shared data
     info!("Connecting to MongoDB...");
     let client_options = ClientOptions::parse(MONGO_URI)
         .await
@@ -175,14 +153,12 @@ async fn main() -> std::io::Result<()> {
     let db_client = web::Data::new(client);
     info!("Successfully connected to MongoDB.");
 
-    // 3. Spawn the background task
     let background_client = db_client.clone();
     tokio::spawn(async move {
         run_periodic_checker(background_client).await;
     });
     info!("Periodic feed checker started in the background.");
 
-    // 4. Start the Actix Web Server
     info!("Starting Actix web server at http://127.0.0.1:8080");
     HttpServer::new(move || {
         App::new()

@@ -1,9 +1,18 @@
-FROM rust:1.89 AS builder
+FROM rust:alpine AS builder
+
 WORKDIR /app
+RUN USER=root \
+    && apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static
+
 COPY . .
+
 RUN cargo build --release
 
-FROM debian:bullseye-slim
-RUN apt-get update && apt-get install -y build-essential libssl-dev && rm -rf /var/lib/apt/lists/*
+FROM alpine:latest
+
+WORKDIR /app
+RUN apk update && apk add openssl ca-certificates
+
 COPY --from=builder /app/target/release/go-news-backend .
+
 CMD ["./go-news-backend"]

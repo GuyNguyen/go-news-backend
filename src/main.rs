@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::time::Duration;
 
-const CHECK_INTERVAL_SECONDS: u64 = 60 * 30; // 30 minutes
+const CHECK_INTERVAL_SECONDS: u64 = 60 * 30;
 const MONGO_URI: &str = "mongodb://localhost:27017";
 const DB_NAME: &str = "rss_feed_db";
 const COLLECTION_NAME: &str = "feed_items";
@@ -23,8 +23,8 @@ struct RssItem {
     link: String,
     description: String,
     pub_date: String,
-    #[serde(default)] // Add this attribute
-    posted: bool, // New field to track post status
+    #[serde(default)]
+    posted: bool,
 }
 
 #[derive(Deserialize)]
@@ -170,7 +170,7 @@ async fn fetch_and_store_feed(client: &Client) -> Result<(), Box<dyn Error>> {
 async fn run_periodic_checker(client: web::Data<Client>) {
     let mut interval = tokio::time::interval(Duration::from_secs(CHECK_INTERVAL_SECONDS));
     loop {
-        interval.tick().await; // Wait for the next tick
+        interval.tick().await;
         info!("Running periodic check for RSS feed updates...");
         if let Err(e) = fetch_and_store_feed(&client).await {
             error!("An error occurred during the periodic feed check: {}", e);
@@ -179,7 +179,6 @@ async fn run_periodic_checker(client: web::Data<Client>) {
 }
 
 fn setup_logger() -> Result<(), fern::InitError> {
-    // Create a shared formatter
     let formatter = move |out: fern::FormatCallback, message: &std::fmt::Arguments, record: &log::Record| {
         out.finish(format_args!(
             "{} [{}] - {}",
@@ -191,12 +190,12 @@ fn setup_logger() -> Result<(), fern::InitError> {
 
     let console_log = fern::Dispatch::new()
         .format(formatter.clone())
-        .level(log::LevelFilter::Info) // Set the log level for console
+        .level(log::LevelFilter::Info)
         .chain(std::io::stdout());
 
     let file_log = fern::Dispatch::new()
         .format(formatter)
-        .level(log::LevelFilter::Info) // Set the log level for file
+        .level(log::LevelFilter::Info)
         .chain(fern::log_file("backend.log")?);
 
     fern::Dispatch::new()

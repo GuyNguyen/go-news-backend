@@ -152,7 +152,7 @@ async fn fetch_and_store_feed(client: &Client) -> Result<(), Box<dyn Error>> {
             link: item.link().unwrap_or_default().to_string(),
             description: item.description().unwrap_or_default().to_string(),
             pub_date: item.pub_date().unwrap_or_default().to_string(),
-            posted: false, // Default to false for new items
+            posted: false,
         };
 
         let filter = doc! { "link": &rss_item.link };

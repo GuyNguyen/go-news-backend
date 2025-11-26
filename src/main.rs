@@ -13,7 +13,7 @@ use std::error::Error;
 use std::time::Duration;
 
 const CHECK_INTERVAL_SECONDS: u64 = 60 * 30;
-const MONGO_URI: &str = "mongodb://localhost:27017";
+const MONGO_URI: &str = "mongodb://mongo:27017";
 const DB_NAME: &str = "rss_feed_db";
 const COLLECTION_NAME: &str = "feed_items";
 
@@ -155,7 +155,7 @@ async fn fetch_and_store_feed(client: &Client) -> Result<(), Box<dyn Error>> {
             posted: false,
         };
 
-        let filter = doc! { "link": &rss_item.link };
+        let filter = doc! { "link": &rss_item.link, "title": &rss_item.title };
         let existing_item = collection.find_one(filter).await?;
 
         if existing_item.is_none() {
@@ -234,7 +234,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_unposted_items)
             .service(mark_items_posted)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", 8080))?
     .run()
     .await
 }
